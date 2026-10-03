@@ -140,11 +140,16 @@
       try {
         const changes = this.dirtyRecords().map((r) => { const c = { ...r }; delete c._d; c._view = viewOf(c.t, c); return c; });
         const body = { action: 'sync', key, since: this.meta.lastServerTs || 0, device: this.meta.device, changes };
-        const res = await fetchFn(url, {
-          method: 'POST', redirect: 'follow',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(body)
-        });
+        let res;
+        try {
+          res = await fetchFn(url, {
+            method: 'POST', redirect: 'follow',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(body)
+          });
+        } catch (netErr) {
+          throw new Error('Could not reach the Google Sheet. Open the sync link in a new tab: it should show {"ok":true…}. If you see a Google sign-in or error page instead, redeploy the script with "Who has access: Anyone".');
+        }
         let out;
         try { out = await res.json(); } catch (e) { throw new Error('The sync link did not return data. Check that the web app is deployed with access "Anyone".'); }
         if (!out.ok) throw new Error(out.error || 'Sync failed');
