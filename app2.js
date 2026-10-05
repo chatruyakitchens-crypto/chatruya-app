@@ -352,7 +352,7 @@
       (!hasData && !A.syncConfigured() ? '<div class="section"><h2>Try it out</h2></div><p class="sub" style="margin-top:0">Fill the app with a sample menu, stock and 10 days of orders so you can explore.</p><button class="btn small alt" data-act="demo">Load sample data</button>' : '') +
       '<div class="section"><h2>Start fresh</h2></div><p class="sub" style="margin-top:0">Removes everything stored on this phone. Data already in the Google Sheet stays there and comes back on next sync.</p>' +
       '<button class="btn small danger" data-act="erase">Erase this phone’s data</button>' +
-      '<p class="sub" style="margin-top:24px">Version 1.0 · device ' + esc(m.device || '') + ' · stored in ' + esc(S.adapter.kind) + '</p></form>';
+      '<p class="sub" style="margin-top:24px">Version 1.5 · device ' + esc(m.device || '') + ' · stored in ' + esc(S.adapter.kind) + '</p></form>';
   };
   acts.saveSettings = async (arg, el) => {
     const f = $('#setf');
@@ -459,7 +459,11 @@
     S.on((kind) => { if (kind === 'change') { render(); A.scheduleSync(); } else A.badge(); });
     render();
     A.scheduleSync(800);
-    if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+    if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((r) => r.update()).catch(() => {});
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) navigator.serviceWorker.addEventListener('controllerchange', () => {
+      // a new version was just installed: reload now unless someone is in the middle of a form
+      if (!A.sheetOpen()) location.reload(); else toast('App updated. Close and reopen it to see the new version.');
+    });
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   }
   document.addEventListener('submit', (e) => e.preventDefault()); // Enter in a field must not reload the app

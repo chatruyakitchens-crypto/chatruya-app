@@ -1,6 +1,6 @@
 /* Chatruya Kitchens offline cache. Bump VERSION when you change any app file. */
-const VERSION = 'chatruya-v4';
-const FILES = ['./', './index.html', './core.js', './app.js', './app2.js', './app3.js', './app4.js', './manifest.webmanifest',
+const VERSION = 'chatruya-v5';
+const FILES = ['./', './index.html', './core.js?v=1.5', './app.js?v=1.5', './app2.js?v=1.5', './app3.js?v=1.5', './app4.js?v=1.5', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
@@ -22,7 +22,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return; // sync calls go straight to Google
   // network first so updates arrive quickly, cache when offline
-  e.respondWith(fetch(e.request).then((res) => {
+  e.respondWith(fetch(e.request, { cache: 'no-cache' }).then((res) => {
     const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); return res;
   }).catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match('./index.html'))));
 });
