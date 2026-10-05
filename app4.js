@@ -44,8 +44,8 @@
     cx.fillStyle = LEAF; cx.fillRect(0, 0, W, 116);
     cx.fillStyle = '#fff'; cx.font = '800 32px ' + ROUND; cx.fillText(fit(cx, k.name, 440), P, 56);
     cx.fillStyle = TURMERIC; cx.font = '600 17px ' + FONT; cx.fillText(k.phone ? 'WhatsApp / call ' + k.phone : 'Home-cooked meals', P, 88);
-    cx.textAlign = 'right'; cx.fillStyle = '#fff'; cx.font = '700 20px ' + FONT; cx.fillText('Bill #' + dayNo(o), W - P, 56);
-    cx.font = '500 16px ' + FONT; cx.fillStyle = '#CFE0D6'; cx.fillText(niceDay(C.serveDate(o)) + ' · ' + C.slotOf(o), W - P, 86); cx.textAlign = 'left';
+    cx.textAlign = 'right'; cx.fillStyle = '#fff'; cx.font = '700 20px ' + FONT; cx.fillText(o.billNo ? 'Bill ' + o.billNo : 'Order #' + dayNo(o), W - P, 56);
+    cx.font = '500 16px ' + FONT; cx.fillStyle = '#CFE0D6'; cx.fillText(A.fmtDate(o.billDate || C.serveDate(o)) + ' · ' + C.slotOf(o), W - P, 86); cx.textAlign = 'left';
     let y = 160;
     cx.fillStyle = MUTED; cx.font = '600 14px ' + FONT; cx.fillText('Bill to', P, y);
     cx.textAlign = 'right'; cx.fillText('Delivery', W - P, y); cx.textAlign = 'left';
@@ -135,12 +135,15 @@
   const safeName = (s) => String(s || '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 30);
 
   acts.billPdf = async (id) => {
-    const o = S.get('orders', id); if (!o) return;
+    const o0 = S.get('orders', id); if (!o0) return;
+    const o = o0.billNo ? o0 : { ...o0, billNo: C.nextBillNo(), billDate: today() };
     const b = billCanvas(o); if (!b) { toast('This phone can’t make PDFs'); return; }
     const pdf = jpegToPdf(dataUrlBytes(b.canvas.toDataURL('image/jpeg', 0.9)), b.w, b.h);
-    const name = 'Bill-' + C.serveDate(o) + '-' + dayNo(o) + (o.customer ? '-' + safeName(o.customer) : '') + '.pdf';
-    const r = await shareOrSave(pdf, 'application/pdf', name, kitchen().name + ' bill: ' + rs(o.total));
+    const name = 'Bill-' + o.billNo + (o.customer ? '-' + safeName(o.customer) : '') + '.pdf';
+    const r = await shareOrSave(pdf, 'application/pdf', name, kitchen().name + ' bill ' + o.billNo + ': ' + rs(o.total));
     if (r === 'downloaded') toast('Bill saved as PDF. Attach it in WhatsApp from Files/Downloads.');
+    await S.put('orders', r === 'cancelled' ? o : { ...o, billSentAt: C.nowLocal(), billSentVia: 'PDF' });
+    A.orderDetail(id);
   };
 
   // ================= PHONE BOOK =================
@@ -338,6 +341,47 @@
     savePoster(true);
   };
   window.addEventListener('hashchange', () => { if (!/^#poster/.test(location.hash)) ui.poster = null; });
+
+  // ================= BILLS REGISTER (for audit) =================
+  const billsIn = (from, to) => S.list('orders').filter((o) => o.billNo && (o.billDate || '') >= from && (o.billDate || '') <= to)
+    .sort((a, b) => (a.billNo < b.billNo ? -1 : 1));
+  A.billsSection = (from, to) => {
+    const bills = billsIn(from, to);
+    const missing = S.list('orders').filter((o) => !o.billNo && o.status === 'Delivered' && C.serveDate(o) >= from && C.serveDate(o) <= to);
+    let h = '<div class="section"><h2>Bills register</h2><span class="sub">' + bills.length + ' bill' + (bills.length === 1 ? '' : 's') + '</span></div>';
+    if (!bills.length && !missing.length) return h + '<p class="sub" style="margin-top:0">Bills get a number like CK-' + new Date().getFullYear() + '-0001 when an order is marked delivered or a bill is sent.</p>';
+    if (bills.length) {
+      const total = bills.reduce((s, o) => s + num(o.total), 0), unpaid = bills.filter((o) => !o.paid), notSent = bills.filter((o) => !o.billSentAt && o.status !== 'Cancelled');
+      h += '<div class="grid2" style="margin-bottom:10px"><div class="kpi"><div class="l">Billed</div><div class="v">' + inr(total) + '</div><div class="h">' + bills[0].billNo + ' to ' + bills[bills.length - 1].billNo + '</div></div>' +
+        '<div class="kpi"><div class="l">Not sent / unpaid</div><div class="v ' + (notSent.length || unpaid.length ? 'neg' : 'pos') + '">' + notSent.length + ' / ' + unpaid.length + '</div><div class="h">bills</div></div></div>';
+      h += '<div class="card"><table class="t"><thead><tr><th>Bill</th><th>Customer</th><th class="n">Amount</th></tr></thead><tbody>' +
+        bills.slice(-20).reverse().map((o) => '<tr data-act="order:' + o.id + '" style="cursor:pointer"><td>' + esc(o.billNo) + '<div class="sub" style="font-size:12px">' + A.fmtDate(o.billDate) + '</div></td><td>' + esc(o.customer || 'Walk-in') +
+          '<div class="sub" style="font-size:12px">' + (o.status === 'Cancelled' ? 'Cancelled' : (o.paid ? 'Paid' : '<b class="neg">Due</b>') + ' · ' + (o.billSentAt ? 'sent' : '<b class="neg">not sent</b>')) + '</div></td><td class="n">' + inr(o.total) + '</td></tr>').join('') + '</tbody></table>' +
+        (bills.length > 20 ? '<p class="sub" style="margin:8px 0 0">Showing the latest 20. The download has all ' + bills.length + '.</p>' : '') + '</div>';
+    }
+    if (missing.length) h += '<div class="note" style="margin-top:10px">' + missing.length + ' delivered order' + (missing.length === 1 ? ' has' : 's have') + ' no bill number yet. <button class="link" data-act="billsFill:' + from + '_' + to + '">Give them bill numbers</button></div>';
+    h += '<div class="btns" style="margin-top:10px"><button class="btn small" data-act="billsCsv:' + from + '_' + to + '">Download bills register (Excel)</button></div>';
+    return h;
+  };
+  acts.billsFill = async (range) => {
+    const [from, to] = range.split('_');
+    const list = S.list('orders').filter((o) => !o.billNo && o.status === 'Delivered' && C.serveDate(o) >= from && C.serveDate(o) <= to)
+      .sort((a, b) => (C.serveDate(a) + a.createdAt < C.serveDate(b) + b.createdAt ? -1 : 1));
+    if (!list.length || !confirmAsk('Give bill numbers to ' + list.length + ' delivered order' + (list.length === 1 ? '' : 's') + '? Each gets the next number, dated on its delivery day.')) return;
+    for (const o of list) await S.put('orders', { ...o, billNo: C.nextBillNo(C.serveDate(o).slice(0, 4)), billDate: C.serveDate(o) });
+    toast(list.length + ' bills numbered'); render();
+  };
+  acts.billsCsv = (range) => {
+    const [from, to] = range.split('_'); const bills = billsIn(from, to);
+    if (!bills.length) { toast('No bills in these dates'); return; }
+    const cols = ['Bill no', 'Bill date', 'Customer', 'Phone', 'Items', 'Plates', 'Subtotal', 'Delivery', 'Discount', 'Total', 'Payment', 'Paid', 'Status', 'Bill sent', 'Sent as', 'Delivered for', 'Slot', 'Entered by'];
+    const rows = bills.map((o) => [o.billNo, o.billDate, o.customer || '', o.phone || '', (o.items || []).map((l) => l.qty + ' x ' + l.name + (num(l.price) ? ' @ ' + num(l.price) : ' (free)')).join('; '),
+      C.platesOf(o.items), num(o.subtotal != null ? o.subtotal : C.orderTotals(o.items, 0, 0).subtotal), num(o.delivery), num(o.discount), num(o.total), o.payMode || '', o.paid ? 'Yes' : 'No', o.status || '',
+      o.billSentAt ? o.billSentAt.replace('T', ' ') : 'Not sent', o.billSentVia || '', C.serveDate(o), C.slotOf(o), o.by || '']);
+    const q = (v) => { const s = String(v == null ? '' : v); return /^[=+\-@]/.test(s) ? '"\'' + s.replace(/"/g, '""') + '"' : '"' + s.replace(/"/g, '""') + '"'; };
+    const csv = '﻿' + [cols.map(q).join(',')].concat(rows.map((r) => r.map(q).join(','))).join('\r\n');
+    shareOrSave(new TextEncoder().encode(csv), 'text/csv', 'Bills-register-' + from + '-to-' + to + '.csv', bills.length + ' bills').then((r) => { if (r === 'downloaded') toast('Bills register downloaded. It opens in Excel.'); });
+  };
 
   window.App4 = { jpegToPdf, billCanvas, posterCanvas, kitchen };
 })();

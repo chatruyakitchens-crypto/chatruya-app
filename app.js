@@ -182,7 +182,14 @@
     const status = NEXT[o.status];
     await S.put('orders', { ...o, status });
     toast('#' + dayNo(o) + ' is ' + status.toLowerCase());
+    if (status === 'Delivered') { await ensureBill(id); orderDetail(id); }
   };
+  // give a delivered order its bill number (once)
+  async function ensureBill(id) {
+    const o = S.get('orders', id); if (!o || o.billNo || o.status === 'Cancelled') return o;
+    return S.put('orders', { ...o, billNo: C.nextBillNo(), billDate: today() });
+  }
+  function fmtDate(key) { if (!key) return ''; const [y, m, d] = key.slice(0, 10).split('-').map(Number); return d + ' ' + MONTHS[m - 1] + ' ' + y; }
   acts.order = (id) => orderDetail(id);
   acts.newOrder = () => orderForm();
 
@@ -406,6 +413,7 @@
         deliveryDate: val(f, 'deliveryDate') || today(), slot: val(f, 'slot') || C.slots()[0].name
       };
       if (!o && C.cutoffAt(rec.deliveryDate, rec.slot) < new Date()) rec.late = true;
+      if (rec.status === 'Delivered' && !rec.billNo) { rec.billNo = C.nextBillNo(); rec.billDate = today(); }
       const saved = await S.put('orders', rec);
       toast((o ? 'Order updated' : 'Order saved') + ' · ' + C.platesOf(items) + ' plates');
       orderDetail(saved.id);
@@ -446,7 +454,7 @@
   }
 
   function billText(o) {
-    const L = ['*' + (S.meta.kitchenName || 'Chatruya Kitchens') + '*', 'Order #' + dayNo(o) + ' · ' + C.slotOf(o) + ', ' + niceDay(C.serveDate(o)) + ' (by ' + fmtClock(C.deliverAt(C.serveDate(o), C.slotOf(o))) + ')', ''];
+    const L = ['*' + (S.meta.kitchenName || 'Chatruya Kitchens') + '*', (o.billNo ? 'Bill no: ' + o.billNo + ' · ' + fmtDate(o.billDate) : 'Order #' + dayNo(o) + ' · ' + C.slotOf(o) + ', ' + fmtDate(C.serveDate(o))), ''];
     (o.items || []).forEach((l) => L.push(l.qty + ' x ' + l.name + ' — ' + (num(l.price) ? inr(l.qty * l.price) : 'free')));
     if (C.platesOf(o.items) >= 2) L.push('(' + C.platesOf(o.items) + ' plates)');
     if (num(o.delivery)) L.push('Delivery — ' + inr(o.delivery));
@@ -471,20 +479,32 @@
       '<div class="sum sub"><span>Food cost ' + inr(o.cost) + '</span><span>Profit ' + inr(num(o.total) - num(o.cost)) + '</span></div></div>';
     b += '<div class="check" style="justify-content:space-between"><span>' + esc(o.payMode || '') + ' · ' + (o.paid ? '<b class="pos">Paid</b>' : '<b class="neg">Not paid yet</b>') + '</span>' +
       '<button class="btn small ' + (o.paid ? 'alt' : '') + '" data-act="togglePaid:' + o.id + '">' + (o.paid ? 'Mark unpaid' : 'Mark paid') + '</button></div>';
-    b += '<div class="btns" style="margin-bottom:8px"><button class="btn warm" data-act="billPdf:' + o.id + '">Share bill as PDF</button></div>';
-    b += '<div class="btns" style="margin-bottom:10px">' + (o.phone ? '<a class="btn alt" target="_blank" rel="noopener" href="https://wa.me/' + phoneDigits(o.phone) + '?text=' + encodeURIComponent(billText(o)) + '">Send bill as text on WhatsApp</a>' : '<button class="btn alt" data-act="shareBill:' + o.id + '">Share bill</button>') + '</div>';
+    const who = esc((o.customer || 'the customer').split(' ')[0]);
+    if (o.billNo) b += '<div class="note" style="margin-bottom:10px"><b>Bill ' + esc(o.billNo) + '</b> · ' + fmtDate(o.billDate) + ' · ' + (o.billSentAt ? 'sent ' + niceDay(o.billSentAt) + ' ' + niceTime(o.billSentAt) + (o.billSentVia ? ' as ' + esc(o.billSentVia) : '') : '<b class="neg">not sent yet</b>') + '</div>';
+    if (o.status === 'Delivered' && !o.billSentAt) b += '<div class="alert soon" style="cursor:default"><b>Delivered. Send the bill to ' + who + '</b><span>The bill number is saved in your Google Sheet for your records.</span></div>';
+    b += '<div class="btns" style="margin-bottom:8px"><button class="btn warm" data-act="billPdf:' + o.id + '">' + (o.billSentAt ? 'Send PDF bill again' : 'Send PDF bill') + '</button></div>';
+    b += '<div class="btns" style="margin-bottom:10px"><button class="btn alt" data-act="waBill:' + o.id + '">' + (o.phone ? 'WhatsApp bill to ' + esc(o.phone) : 'Send bill as WhatsApp text') + '</button></div>';
     b += '<div class="btns"><button class="btn small alt" data-act="editOrder:' + o.id + '">Edit</button>' +
       (o.status !== 'Cancelled' && o.status !== 'Delivered' ? '<button class="btn small danger" data-act="cancelOrder:' + o.id + '">Cancel order</button>' : '') +
       '<button class="btn small danger" data-act="deleteOrder:' + o.id + '">Delete</button></div>';
     b += '<p class="sub" style="margin-top:14px">Taken by ' + esc(o.by || '') + '</p>';
-    const actions = next ? [{ label: NEXT_LABEL[o.status], cls: 'warm', run: async () => { await S.put('orders', { ...o, status: next }); toast('Order is ' + next.toLowerCase()); orderDetail(o.id); } }] : [];
-    openSheet('Order #' + dayNo(o), b, actions);
+    const actions = next ? [{ label: NEXT_LABEL[o.status], cls: 'warm', run: async () => { await S.put('orders', { ...o, status: next }); toast('Order is ' + next.toLowerCase()); if (next === 'Delivered') await ensureBill(o.id); orderDetail(o.id); } }] : [];
+    openSheet(o.billNo ? 'Bill ' + o.billNo : 'Order #' + dayNo(o), b, actions);
     bind($('#sheetBody'));
   }
   acts.togglePaid = async (id) => { const o = S.get('orders', id); await S.put('orders', { ...o, paid: !o.paid, payMode: !o.paid && o.payMode === 'Pay later' ? 'Cash' : o.payMode }); orderDetail(id); };
   acts.editOrder = (id) => orderForm(id);
   acts.cancelOrder = async (id) => { if (!confirmAsk('Cancel this order? Its stock is put back and it leaves your sales.')) return; const o = S.get('orders', id); await S.put('orders', { ...o, status: 'Cancelled' }); toast('Order cancelled'); orderDetail(id); };
   acts.deleteOrder = async (id) => { if (!confirmAsk('Delete this order for good?')) return; await S.remove('orders', id); toast('Order deleted'); closeSheet(); };
+  // WhatsApp text bill straight to the customer's number; gives the order a bill number first
+  acts.waBill = async (id) => {
+    const o = S.get('orders', id); if (!o) return;
+    const ob = o.billNo ? { ...o } : { ...o, billNo: C.nextBillNo(), billDate: today() };
+    const url = 'https://wa.me/' + (o.phone ? phoneDigits(o.phone) : '') + '?text=' + encodeURIComponent(billText(ob));
+    window.open(url, '_blank');
+    await S.put('orders', { ...ob, billSentAt: C.nowLocal(), billSentVia: 'WhatsApp text' });
+    orderDetail(id);
+  };
   acts.shareBill = async (id) => {
     const text = billText(S.get('orders', id));
     if (navigator.share) { try { await navigator.share({ text }); } catch (e) { /* closed */ } }
@@ -492,5 +512,5 @@
   };
 
   // expose for part 2
-  window.App = { C, S, num, r2, $, $$, esc, inr, qty, today, niceDay, niceTime, MONTHS, DAYS, UNITS, PAYMODES, DISH_CATS, ui, toast, chips, field, group, val, confirmAsk, phoneDigits, itemName, itemUnit, openSheet, closeSheet, sheetOpen, views, acts, bind, render, fab, runSync, scheduleSync, badge, syncConfigured, orderDetail, ticket, dayNo, NEXT, NEXT_LABEL, fmtClock, fmtWhen, untilText, batchLabel, batchHash, currentAlerts, kitchenQueue, orderForm, billText };
+  window.App = { C, S, num, r2, $, $$, esc, inr, qty, today, niceDay, niceTime, MONTHS, DAYS, UNITS, PAYMODES, DISH_CATS, ui, toast, chips, field, group, val, confirmAsk, phoneDigits, itemName, itemUnit, openSheet, closeSheet, sheetOpen, views, acts, bind, render, fab, runSync, scheduleSync, badge, syncConfigured, orderDetail, ticket, dayNo, NEXT, NEXT_LABEL, fmtClock, fmtWhen, untilText, batchLabel, batchHash, currentAlerts, kitchenQueue, orderForm, billText, fmtDate, ensureBill };
 })();

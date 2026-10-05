@@ -421,6 +421,16 @@
     return Object.values(map).sort((a, b) => (b.last || '').localeCompare(a.last || '') || (a.name || '').localeCompare(b.name || ''));
   }
 
+  // ---------- bill numbers: CK-2026-0001, never reused (deleted orders keep theirs) ----------
+  function nextBillNo(year) {
+    year = String(year || new Date().getFullYear()); let max = 0;
+    Store.raw('orders').forEach((o) => { const m = /^CK-(\d{4})-(\d+)$/.exec(o.billNo || ''); if (m && m[1] === year) max = Math.max(max, Number(m[2])); });
+    const last = /^CK-(\d{4})-(\d+)$/.exec(Store.meta.lastBillNo || ''); if (last && last[1] === year) max = Math.max(max, Number(last[2]));
+    const no = 'CK-' + year + '-' + String(max + 1).padStart(4, '0');
+    Store.meta.lastBillNo = no; if (Store.adapter) Store.adapter.putMeta('lastBillNo', no);
+    return no;
+  }
+
   // ---------- readable columns for Google Sheets ----------
   function viewOf(t, r) {
     if (r.deleted) return { Deleted: 'Yes' };
@@ -429,7 +439,8 @@
       'Deliver on': serveDate(r), Slot: slotOf(r), 'Taken at': (r.date || '').replace('T', ' '), Customer: r.customer || '', Phone: r.phone || '', Channel: r.channel || '',
       Items: (r.items || []).map((l) => l.qty + ' x ' + l.name).join(', '),
       Total: num(r.total), 'Food cost': num(r.cost), Profit: round2(num(r.total) - num(r.cost)),
-      Status: r.status || '', Payment: r.payMode || '', Paid: r.paid ? 'Yes' : 'No', Address: r.address || '', Notes: r.notes || '', By: r.by || ''
+      Status: r.status || '', Payment: r.payMode || '', Paid: r.paid ? 'Yes' : 'No', Address: r.address || '', Notes: r.notes || '', By: r.by || '',
+      'Bill no': r.billNo || '', 'Bill date': r.billDate || '', 'Bill sent': r.billSentAt ? r.billSentAt.replace('T', ' ') + (r.billSentVia ? ' (' + r.billSentVia + ')' : '') : ''
     };
     if (t === 'expenses') return { Date: r.date || '', Category: r.category || '', Amount: num(r.amount), 'Paid via': r.payMode || '', Note: r.note || '', By: r.by || '' };
     if (t === 'items') return { Name: r.name || '', Unit: r.unit || '', 'Low stock at': num(r.min), 'Cost per unit': num(r.cost) };
@@ -451,7 +462,7 @@
     dayKey, nowLocal, addDays, monthStart, monthEnd,
     memoryAdapter, idbAdapter,
     unitCost, stockOf, lowStock, dishCost, orderSnapshot, orderTotals, stats, customers, viewOf,
-    DEFAULT_SLOTS, isCooked, slots, serveDate, slotOf, slotIndex, slotDef, cutoffAt, deliverAt, batchKey, parseBatch, batchCmp, nextOpenBatch, batchOrders, batchesWithOrders, prepList, isSideDish, isSideLine, platesOf, phoneKey, contacts, prepMoves, recordedBatches, usedOf
+    DEFAULT_SLOTS, isCooked, slots, serveDate, slotOf, slotIndex, slotDef, cutoffAt, deliverAt, batchKey, parseBatch, batchCmp, nextOpenBatch, batchOrders, batchesWithOrders, prepList, isSideDish, isSideLine, platesOf, phoneKey, contacts, prepMoves, recordedBatches, usedOf, nextBillNo
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Core; else G.Core = Core;
 })(typeof window !== 'undefined' ? window : globalThis);

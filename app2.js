@@ -299,6 +299,7 @@
     if (dishes.length) h += '<div class="section"><h2>Dish margins</h2><button class="link" data-act="go:menu">Menu</button></div><div class="card"><table class="t"><thead><tr><th>Dish</th><th class="n">Price</th><th class="n">Cost</th><th class="n">Margin</th></tr></thead><tbody>' +
       dishes.map((d) => { const c = C.dishCost(d), p = num(d.price), pct = p ? Math.round(((p - c) / p) * 100) : 0; return { d, c, p, pct }; }).sort((a, b) => a.pct - b.pct)
         .map((x) => '<tr><td>' + esc(x.d.name) + '</td><td class="n">' + inr(x.p) + '</td><td class="n">' + inr(x.c) + '</td><td class="n ' + marginCls(x.pct) + '">' + x.pct + '%</td></tr>').join('') + '</tbody></table></div>';
+    if (A.billsSection) h += A.billsSection(from, to);
     h += '<div class="section"><h2>Export</h2></div><div class="btns"><button class="btn small alt" data-act="csv:orders">Orders (CSV)</button><button class="btn small alt" data-act="csv:expenses">Expenses (CSV)</button></div>';
     setTimeout(() => {
       const rf = $('#rf'), rt = $('#rt');
@@ -351,7 +352,7 @@
       (!hasData && !A.syncConfigured() ? '<div class="section"><h2>Try it out</h2></div><p class="sub" style="margin-top:0">Fill the app with a sample menu, stock and 10 days of orders so you can explore.</p><button class="btn small alt" data-act="demo">Load sample data</button>' : '') +
       '<div class="section"><h2>Start fresh</h2></div><p class="sub" style="margin-top:0">Removes everything stored on this phone. Data already in the Google Sheet stays there and comes back on next sync.</p>' +
       '<button class="btn small danger" data-act="erase">Erase this phone’s data</button>' +
-      '<p class="sub" style="margin-top:24px">Version 1.7 · device ' + esc(m.device || '') + ' · stored in ' + esc(S.adapter.kind) + '</p></form>';
+      '<p class="sub" style="margin-top:24px">Version 1.8 · device ' + esc(m.device || '') + ' · stored in ' + esc(S.adapter.kind) + '</p></form>';
   };
   acts.saveSettings = async (arg, el) => {
     const f = $('#setf');
