@@ -56,16 +56,15 @@
     const s = C.stockOf(id), uc = C.unitCost(id);
     const usedIn = S.list('dishes').filter((d) => (d.recipe || []).some((l) => l.itemId === id));
     const moves = S.list('stock').filter((m) => m.itemId === id).sort((a, b) => (a.date + a.createdAt < b.date + b.createdAt ? 1 : -1)).slice(0, 25);
-    let usedToday = 0, used7 = 0; const wk = C.addDays(today(), -6);
-    S.list('orders').forEach((o) => { if (o.status === 'Cancelled') return; const k = (o.date || '').slice(0, 10); (o.consumption || []).forEach((c) => { if (c.itemId === id) { if (k === today()) usedToday += num(c.qty); if (k >= wk) used7 += num(c.qty); } }); });
+    const usedToday = C.usedOf(id, today(), today()), used7 = C.usedOf(id, C.addDays(today(), -6), today());
     let b = '<div class="grid2" style="margin-bottom:12px"><div class="kpi"><div class="l">In stock</div><div class="v ' + (num(it.min) && s <= num(it.min) ? 'neg' : '') + '">' + qty(s, it.unit) + '</div><div class="h">' + (num(it.min) ? 'alert at ' + qty(it.min, it.unit) : 'no alert set') + '</div></div>' +
       '<div class="kpi"><div class="l">Price</div><div class="v">' + inr(uc) + '</div><div class="h">per ' + esc(it.unit) + '</div></div>' +
-      '<div class="kpi"><div class="l">Used today</div><div class="v">' + qty(usedToday, it.unit) + '</div><div class="h">by orders</div></div>' +
+      '<div class="kpi"><div class="l">Used today</div><div class="v">' + qty(usedToday, it.unit) + '</div><div class="h">in cooking</div></div>' +
       '<div class="kpi"><div class="l">Last 7 days</div><div class="v">' + qty(used7, it.unit) + '</div><div class="h">' + (used7 > 0 && s > 0 ? 'lasts ~' + Math.max(1, Math.round(s / (used7 / 7))) + ' more days' : 'by orders') + '</div></div></div>';
     b += '<div class="btns" style="margin-bottom:14px"><button class="btn small" data-act="purchase:' + id + '">Record purchase</button><button class="btn small alt" data-act="adjust:' + id + '">Correct stock</button></div>';
     if (usedIn.length) b += '<div class="day-h"><span>Used in</span></div><p style="margin:0 0 6px">' + usedIn.map((d) => esc(d.name)).join(', ') + '</p>';
     b += '<div class="day-h"><span>History</span></div>';
-    b += moves.length ? '<div class="box">' + moves.map((m) => '<div class="line"><div class="grow"><div class="t">' + ({ purchase: 'Bought', opening: 'Starting stock', adjust: num(m.qty) < 0 ? 'Used / wasted' : 'Correction' }[m.type] || m.type) + (m.vendor ? ' · ' + esc(m.vendor) : '') + '</div><div class="m">' + niceDay(m.date) + (num(m.cost) ? ' · ' + inr(m.cost) : '') + (m.note ? ' · ' + esc(m.note) : '') + '</div></div>' +
+    b += moves.length ? '<div class="box">' + moves.map((m) => '<div class="line"><div class="grow"><div class="t">' + ({ purchase: 'Bought', opening: 'Starting stock', prep: 'Used in cooking', adjust: num(m.qty) < 0 ? 'Used / wasted' : 'Correction' }[m.type] || m.type) + (m.vendor ? ' · ' + esc(m.vendor) : '') + '</div><div class="m">' + niceDay(m.date) + (num(m.cost) ? ' · ' + inr(m.cost) : '') + (m.note ? ' · ' + esc(m.note) : '') + '</div></div>' +
       '<span class="amt ' + (num(m.qty) < 0 ? 'neg' : '') + '">' + (num(m.qty) > 0 ? '+' : '') + qty(m.qty, it.unit) + '</span><button class="x" aria-label="Remove this entry" data-act="delMove:' + m.id + '">&times;</button></div>').join('') + '</div>'
       : '<p class="sub">No purchases recorded yet.</p>';
     b += '<div class="btns" style="margin-top:14px"><button class="btn small alt" data-act="editItem:' + id + '">Edit item</button><button class="btn small danger" data-act="delItem:' + id + '">Delete item</button></div>';
@@ -352,7 +351,7 @@
       (!hasData && !A.syncConfigured() ? '<div class="section"><h2>Try it out</h2></div><p class="sub" style="margin-top:0">Fill the app with a sample menu, stock and 10 days of orders so you can explore.</p><button class="btn small alt" data-act="demo">Load sample data</button>' : '') +
       '<div class="section"><h2>Start fresh</h2></div><p class="sub" style="margin-top:0">Removes everything stored on this phone. Data already in the Google Sheet stays there and comes back on next sync.</p>' +
       '<button class="btn small danger" data-act="erase">Erase this phone’s data</button>' +
-      '<p class="sub" style="margin-top:24px">Version 1.5 · device ' + esc(m.device || '') + ' · stored in ' + esc(S.adapter.kind) + '</p></form>';
+      '<p class="sub" style="margin-top:24px">Version 1.6 · device ' + esc(m.device || '') + ' · stored in ' + esc(S.adapter.kind) + '</p></form>';
   };
   acts.saveSettings = async (arg, el) => {
     const f = $('#setf');

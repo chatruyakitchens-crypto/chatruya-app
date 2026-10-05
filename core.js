@@ -209,11 +209,27 @@
   function stockOf(itemId) {
     let q = 0;
     Store.list('stock').forEach((m) => { if (m.itemId === itemId) q += num(m.qty); });
+    const rec = recordedBatches();
     Store.list('orders').forEach((o) => {
-      if (!isCooked(o)) return;
+      if (!isCooked(o) || rec.has(batchKey(serveDate(o), slotOf(o)))) return;
       (o.consumption || []).forEach((c) => { if (c.itemId === itemId) q -= num(c.qty); });
     });
     return round2(q * 1000) === 0 ? 0 : Math.round(q * 1000) / 1000;
+  }
+
+  // ---------- stock actually used for a cooking batch ----------
+  // Once a batch has its usage recorded, those numbers replace the recipe estimate for its orders.
+  function prepMoves(key) { return Store.list('stock').filter((m) => m.type === 'prep' && m.batch === key); }
+  function recordedBatches() { const s = new Set(); Store.list('stock').forEach((m) => { if (m.type === 'prep' && m.batch) s.add(m.batch); }); return s; }
+  function usedOf(itemId, from, to) {
+    const rec = recordedBatches(); let q = 0;
+    Store.list('orders').forEach((o) => {
+      if (!isCooked(o) || rec.has(batchKey(serveDate(o), slotOf(o)))) return;
+      const d = serveDate(o); if (d < from || d > to) return;
+      (o.consumption || []).forEach((c) => { if (c.itemId === itemId) q += num(c.qty); });
+    });
+    Store.list('stock').forEach((m) => { if (m.itemId === itemId && m.type === 'prep' && m.date >= from && m.date <= to) q -= num(m.qty); });
+    return Math.round(q * 1000) / 1000;
   }
 
   // ---------- delivery slots, cut-offs and prep lists ----------
@@ -288,9 +304,15 @@
       if (o.status === 'New') (o.consumption || []).forEach((c) => { need[c.itemId] = (need[c.itemId] || 0) + num(c.qty); });
     });
     // stock already promised to earlier batches that haven't started cooking
-    const me = { date, slot }; const reserved = {};
+    const me = { date, slot }; const reserved = {}; const rec = recordedBatches();
+    const key = batchKey(date, slot); const used = prepMoves(key); const recorded = used.length > 0;
+    const recordedAt = used.reduce((m, x) => Math.max(m, x.updatedAt || 0), 0);
+    if (recorded) Object.keys(need).forEach((k) => { delete need[k]; });
+    const plan = {};
+    orders.forEach((o) => (o.consumption || []).forEach((c) => { plan[c.itemId] = (plan[c.itemId] || 0) + num(c.qty); }));
     Store.list('orders').forEach((o) => {
       if (o.status !== 'New' || isCooked(o)) return;
+      if (rec.has(batchKey(serveDate(o), slotOf(o)))) return;
       if (batchCmp({ date: serveDate(o), slot: slotOf(o) }, me) >= 0) return;
       (o.consumption || []).forEach((c) => { reserved[c.itemId] = (reserved[c.itemId] || 0) + num(c.qty); });
     });
@@ -308,7 +330,12 @@
       dishes: all.filter((d) => !d.side), sides: all.filter((d) => d.side),
       ingredients, shortages: ingredients.filter((i) => i.short > 0),
       notes: orders.filter((o) => (o.notes || '').trim()).map((o) => ({ id: o.id, customer: o.customer || 'Walk-in', notes: o.notes.trim() })),
-      cutoff: cutoffAt(date, slot), deliver: deliverAt(date, slot)
+      cutoff: cutoffAt(date, slot), deliver: deliverAt(date, slot),
+      key, recorded, recordedAt,
+      ordersAfterRecord: recorded ? orders.filter((o) => (o.createdAt || 0) > recordedAt).length : 0,
+      planned: Object.keys(plan).map((itemId) => ({ itemId, qty: Math.round(plan[itemId] * 1000) / 1000 })),
+      used: used.map((m) => ({ id: m.id, itemId: m.itemId, qty: -num(m.qty), value: num(m.cost) })),
+      usedValue: round2(used.reduce((s, m) => s + num(m.cost), 0))
     };
   }
 
@@ -424,7 +451,7 @@
     dayKey, nowLocal, addDays, monthStart, monthEnd,
     memoryAdapter, idbAdapter,
     unitCost, stockOf, lowStock, dishCost, orderSnapshot, orderTotals, stats, customers, viewOf,
-    DEFAULT_SLOTS, isCooked, slots, serveDate, slotOf, slotIndex, slotDef, cutoffAt, deliverAt, batchKey, parseBatch, batchCmp, nextOpenBatch, batchOrders, batchesWithOrders, prepList, isSideDish, isSideLine, platesOf, phoneKey, contacts
+    DEFAULT_SLOTS, isCooked, slots, serveDate, slotOf, slotIndex, slotDef, cutoffAt, deliverAt, batchKey, parseBatch, batchCmp, nextOpenBatch, batchOrders, batchesWithOrders, prepList, isSideDish, isSideLine, platesOf, phoneKey, contacts, prepMoves, recordedBatches, usedOf
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Core; else G.Core = Core;
 })(typeof window !== 'undefined' ? window : globalThis);

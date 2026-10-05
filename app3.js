@@ -44,6 +44,7 @@
     if (p.sides.length) h += '<div class="section"><h2>Chutney</h2></div><div class="box">' + p.sides.map((d) =>
       '<div class="plates"><span class="n">' + d.qty + '</span><div class="grow"><div class="t">' + esc(d.name) + '</div><div class="m">portions</div></div></div>').join('') + '</div>';
 
+    if (A.prepUsageSection) h += A.prepUsageSection(b, p);
     if (p.notes.length) h += '<div class="section"><h2>Special requests</h2></div>' + p.notes.map((n) => '<div class="note" role="button" tabindex="0" data-act="order:' + n.id + '"><b>' + esc(n.customer) + ':</b> ' + esc(n.notes) + '</div>').join('');
 
     if (p.ingredients.length) {
@@ -51,7 +52,7 @@
         '<div class="need" style="font-size:12.5px;color:var(--muted);font-weight:700"><span>Item</span><span>Need</span><span class="s" style="color:inherit">In stock</span></div>' +
         p.ingredients.map((i) => '<div class="need' + (i.short ? ' short' : '') + '"><span>' + esc(i.name) + '</span><span class="q">' + qty(i.need, i.unit) + '</span><span class="s">' + (i.short ? 'buy ' + qty(i.short, i.unit) : qty(i.stock, i.unit)) + '</span></div>').join('') + '</div>';
       if (p.shortages.length) h += '<div class="note">Not enough stock for ' + p.shortages.map((x) => esc(x.name)).join(', ') + '. Buy before you start, then record it in Stock → Record purchase.</div>';
-    } else if (p.toStart) {
+    } else if (p.toStart && !p.recorded) {
       h += '<div class="note">Add recipes to your dishes (☰ → Menu) to see the ingredients each batch needs.</div>';
     }
 
