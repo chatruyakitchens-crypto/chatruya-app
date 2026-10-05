@@ -1,6 +1,6 @@
 /* Chatruya Kitchens offline cache. Bump VERSION when you change any app file. */
-const VERSION = 'chatruya-v6';
-const FILES = ['./', './index.html', './core.js?v=1.6', './app.js?v=1.6', './app2.js?v=1.6', './app3.js?v=1.6', './app4.js?v=1.6', './app5.js?v=1.6', './manifest.webmanifest',
+const VERSION = 'chatruya-v7';
+const FILES = ['./', './index.html', './core.js?v=1.7', './app.js?v=1.7', './app2.js?v=1.7', './app3.js?v=1.7', './app4.js?v=1.7', './app5.js?v=1.7', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {

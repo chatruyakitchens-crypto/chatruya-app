@@ -351,7 +351,7 @@
       (!hasData && !A.syncConfigured() ? '<div class="section"><h2>Try it out</h2></div><p class="sub" style="margin-top:0">Fill the app with a sample menu, stock and 10 days of orders so you can explore.</p><button class="btn small alt" data-act="demo">Load sample data</button>' : '') +
       '<div class="section"><h2>Start fresh</h2></div><p class="sub" style="margin-top:0">Removes everything stored on this phone. Data already in the Google Sheet stays there and comes back on next sync.</p>' +
       '<button class="btn small danger" data-act="erase">Erase this phone’s data</button>' +
-      '<p class="sub" style="margin-top:24px">Version 1.6 · device ' + esc(m.device || '') + ' · stored in ' + esc(S.adapter.kind) + '</p></form>';
+      '<p class="sub" style="margin-top:24px">Version 1.7 · device ' + esc(m.device || '') + ' · stored in ' + esc(S.adapter.kind) + '</p></form>';
   };
   acts.saveSettings = async (arg, el) => {
     const f = $('#setf');

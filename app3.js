@@ -36,7 +36,7 @@
         '<div class="kpi"><div class="l">Not started</div><div class="v ' + (p.toStart ? '' : 'pos') + '">' + p.toStart + '</div><div class="h">' + (p.toStart ? 'orders still New' : 'all in progress') + '</div></div></div>' : '') + '</div>';
 
     if (!p.orders.length) {
-      return h + '<div class="empty"><p>No orders for ' + esc(b.slot.toLowerCase()) + ' ' + esc(niceDay(b.date).toLowerCase()) + ' yet.' + (open ? ' Orders close ' + fmtWhen(p.cutoff) + '.' : '') + '</p><button class="btn small warm" data-act="newOrder">Take an order</button></div>';
+      return h + '<div class="empty"><p>No orders for ' + esc(b.slot.toLowerCase()) + ' ' + esc(niceDay(b.date).toLowerCase()) + ' yet.' + (open ? ' Orders close ' + fmtWhen(p.cutoff) + '.' : '') + '</p><button class="btn small warm" data-act="newOrder">Take an order</button></div>' + (A.prepUsageSection ? A.prepUsageSection(b, p) : '');
     }
 
     h += '<div class="section"><h2>What to cook</h2></div><div class="box">' + p.dishes.map((d) =>
