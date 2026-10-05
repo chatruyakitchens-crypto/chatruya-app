@@ -211,6 +211,19 @@ table.t td.n,table.t th.n{text-align:right}
 .need.short .s{color:var(--chilli);font-weight:700}
 .slot-edit{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
 .slot-edit .row3{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stepper .qty{width:54px;height:38px;text-align:center;font-family:var(--round);font-weight:800;font-size:17px;border:1.5px solid var(--line);border-radius:10px;background:var(--paper);margin:0 3px;-moz-appearance:textfield;appearance:textfield}
+.stepper .qty::-webkit-inner-spin-button,.stepper .qty::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.line .t[data-add]{cursor:pointer}
+.pin{width:64px;border:0;border-bottom:1.5px dashed #AEB8B2;background:transparent;font:inherit;font-size:16px;color:var(--ink);padding:0 2px;margin:0 2px}
+.newside{gap:8px}
+.newside .in{min-height:40px;padding:8px 10px}
+details.more{background:var(--paper);border:1px solid var(--line);border-radius:14px;margin-bottom:14px}
+details.more > summary{padding:13px 14px;font-weight:700;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:10px}
+details.more > summary::-webkit-details-marker{display:none}
+details.more > summary::after{content:"+";font-size:22px;color:var(--leaf);line-height:1}
+details.more[open] > summary::after{content:"−"}
+details.more[open] > summary{border-bottom:1px solid var(--steel)}
+details.more .inner{padding:14px 14px 0}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 </style>
 </head>
@@ -244,5 +257,6 @@ table.t td.n,table.t th.n{text-align:right}
 <script src="app.js"></script>
 <script src="app2.js"></script>
 <script src="app3.js"></script>
+<script src="app4.js"></script>
 </body>
 </html>

@@ -188,7 +188,8 @@
       row('menu', 'Menu & dish costs', S.list('dishes').length + ' dishes, with cost per plate and margin') +
       row('slots', 'Slots & alerts', C.slots().map((s) => s.name + ' closes ' + (s.dayBefore ? 'day before ' : '') + s.cutoff).join(' · ')) +
       row('reports', 'Reports', 'Sales, profit, spending and best sellers') +
-      row('customers', 'Customers', A.C.customers().length + ' customers from your orders') +
+      row('customers', 'Phone book', A.C.customers().length + ' customers · call, WhatsApp, save to phone') +
+      row('poster', 'Menu posters', 'Breakfast, lunch, dinner and special-event menus to share') +
       row('settings', 'Settings & sync', A.syncConfigured() ? 'Sharing with other phones' : 'Connect phones, backups') + '</div>';
   };
 
@@ -203,7 +204,7 @@
     dishes.forEach((d) => {
       const cost = C.dishCost(d), price = num(d.price), pct = price ? Math.round(((price - cost) / price) * 100) : 0;
       if ((d.category || 'Dishes') !== last) { h += (last !== null ? '</div>' : '') + '<div class="day-h"><span>' + esc(d.category || 'Dishes') + '</span></div><div class="list">'; last = d.category || 'Dishes'; }
-      h += '<button class="rowc" data-act="dish:' + d.id + '"' + (d.active === false ? ' style="opacity:.55"' : '') + '><div class="grow"><div class="t">' + esc(d.name) + (d.active === false ? ' (hidden)' : '') + '</div><div class="m">Sells ' + inr(price) + ' · costs ' + inr(cost) + ((d.recipe || []).length ? '' : ' · no recipe yet') + '</div></div><span class="' + marginCls(pct) + '">' + pct + '%</span></button>';
+      h += '<button class="rowc" data-act="dish:' + d.id + '"' + (d.active === false ? ' style="opacity:.55"' : '') + '><div class="grow"><div class="t">' + esc(d.name) + (d.active === false ? ' (hidden)' : '') + '</div><div class="m">Sells ' + inr(price) + ' · costs ' + inr(cost) + ((d.recipe || []).length ? '' : ' · no recipe yet') + '</div></div>' + (C.isSideDish(d) && !price ? '<span class="chip">Free side</span>' : '<span class="' + marginCls(pct) + '">' + pct + '%</span>') + '</button>';
     });
     return h + '</div>';
   };
@@ -238,7 +239,7 @@
     }
     const actions = [{ label: d ? 'Save dish' : 'Add dish', run: async () => {
       const f = $('#df'); const name = val(f, 'name').trim(); if (!name) { toast('Give the dish a name'); return; }
-      if (num(val(f, 'price')) <= 0) { toast('Enter the selling price'); return; }
+      if (num(val(f, 'price')) <= 0 && !C.isSideDish({ category: val(f, 'category') })) { toast('Enter the selling price (chutneys in category Chutney can be ₹0)'); return; }
       await S.put('dishes', { ...(d || {}), name, price: num(val(f, 'price')), category: val(f, 'category').trim(), extraCost: num(val(f, 'extraCost')), active: val(f, 'active'), recipe: recipe.filter((l) => l.itemId && num(l.qty) > 0).map((l) => ({ itemId: l.itemId, qty: num(l.qty) })) });
       toast(d ? 'Dish saved' : name + ' added to menu'); closeSheet();
     } }];
@@ -295,7 +296,7 @@
     const cats = Object.keys(st.byCat).sort((a, b) => st.byCat[b] - st.byCat[a]);
     if (cats.length) { const mx = st.byCat[cats[0]]; h += '<div class="section"><h2>Where the money went</h2></div><div class="card">' + cats.map((c) => '<div class="hbar"><span class="lbl">' + esc(c) + '</span><div class="track"><div class="fill" style="width:' + Math.max(3, (st.byCat[c] / mx) * 100) + '%"></div></div><b>' + inr(st.byCat[c]) + '</b></div>').join('') + '</div>'; }
     if (st.topDishes.length) h += '<div class="section"><h2>Best sellers</h2></div><div class="card"><table class="t"><thead><tr><th>Dish</th><th class="n">Plates</th><th class="n">Sales</th></tr></thead><tbody>' + st.topDishes.slice(0, 10).map((d) => '<tr><td>' + esc(d.name) + '</td><td class="n">' + d.qty + '</td><td class="n">' + inr(d.sales) + '</td></tr>').join('') + '</tbody></table></div>';
-    const dishes = S.list('dishes').filter((d) => d.active !== false);
+    const dishes = S.list('dishes').filter((d) => d.active !== false && num(d.price) > 0);
     if (dishes.length) h += '<div class="section"><h2>Dish margins</h2><button class="link" data-act="go:menu">Menu</button></div><div class="card"><table class="t"><thead><tr><th>Dish</th><th class="n">Price</th><th class="n">Cost</th><th class="n">Margin</th></tr></thead><tbody>' +
       dishes.map((d) => { const c = C.dishCost(d), p = num(d.price), pct = p ? Math.round(((p - c) / p) * 100) : 0; return { d, c, p, pct }; }).sort((a, b) => a.pct - b.pct)
         .map((x) => '<tr><td>' + esc(x.d.name) + '</td><td class="n">' + inr(x.p) + '</td><td class="n">' + inr(x.c) + '</td><td class="n ' + marginCls(x.pct) + '">' + x.pct + '%</td></tr>').join('') + '</tbody></table></div>';
@@ -339,6 +340,7 @@
     return '<div class="screen-title"><h1>Settings</h1></div><form id="setf">' +
       '<div class="section" style="margin-top:0"><h2>Kitchen</h2></div>' +
       field('Kitchen name', '<input class="in" name="kitchenName" value="' + esc(m.kitchenName || 'Chatruya Kitchens') + '">', 'Shown on top and on WhatsApp bills.') +
+      field('Kitchen WhatsApp number', '<input class="in" name="kitchenPhone" type="tel" value="' + esc((S.get('config', 'kitchen') || {}).phone || '') + '" placeholder="98765 43210">', 'Printed on PDF bills and menu posters. Shared with every phone.') +
       field('Your name on this phone', '<input class="in" name="userName" value="' + esc(m.userName || '') + '" placeholder="Priya">', 'Saved with each order and expense so you know who entered it.') +
       '<div class="section"><h2>Share between phones</h2></div>' +
       '<div class="note">' + esc(status) + '</div>' +
@@ -355,6 +357,8 @@
   acts.saveSettings = async (arg, el) => {
     const f = $('#setf');
     await S.setMeta('kitchenName', val(f, 'kitchenName').trim() || 'Chatruya Kitchens');
+    const kc = S.get('config', 'kitchen') || {}; const kName = S.meta.kitchenName, kPhone = val(f, 'kitchenPhone').trim();
+    if (kc.name !== kName || (kc.phone || '') !== kPhone) await S.put('config', { ...kc, id: 'kitchen', name: kName, phone: kPhone });
     await S.setMeta('userName', val(f, 'userName').trim());
     const url = val(f, 'syncUrl').trim(), key = val(f, 'syncKey').trim();
     if (url && !/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) { toast('The sync link should start with https://script.google.com/'); return; }

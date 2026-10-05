@@ -41,6 +41,8 @@
 
     h += '<div class="section"><h2>What to cook</h2></div><div class="box">' + p.dishes.map((d) =>
       '<div class="plates"><span class="n">' + d.qty + '</span><div class="grow"><div class="t">' + esc(d.name) + '</div><div class="m">' + (d.toStart ? d.toStart + ' not started' : 'all started') + '</div></div></div>').join('') + '</div>';
+    if (p.sides.length) h += '<div class="section"><h2>Chutney</h2></div><div class="box">' + p.sides.map((d) =>
+      '<div class="plates"><span class="n">' + d.qty + '</span><div class="grow"><div class="t">' + esc(d.name) + '</div><div class="m">portions</div></div></div>').join('') + '</div>';
 
     if (p.notes.length) h += '<div class="section"><h2>Special requests</h2></div>' + p.notes.map((n) => '<div class="note" role="button" tabindex="0" data-act="order:' + n.id + '"><b>' + esc(n.customer) + ':</b> ' + esc(n.notes) + '</div>').join('');
 
@@ -64,6 +66,7 @@
   function prepText(p) {
     const L = ['*Prep list: ' + p.slot + ', ' + niceDay(p.date) + '*', 'Deliver by ' + fmtClock(p.deliver) + ' · ' + p.orders.length + ' orders · ' + p.plates + ' plates', ''];
     p.dishes.forEach((d) => L.push(d.qty + ' x ' + d.name));
+    if (p.sides.length) { L.push('', '*Chutney*'); p.sides.forEach((d) => L.push(d.qty + ' x ' + d.name)); }
     if (p.notes.length) { L.push('', '*Special requests*'); p.notes.forEach((n) => L.push('• ' + n.customer + ': ' + n.notes)); }
     if (p.shortages.length) { L.push('', '*Buy before cooking*'); p.shortages.forEach((i) => L.push('• ' + i.name + ': ' + qty(i.short, i.unit))); }
     return L.join('\n');

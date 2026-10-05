@@ -270,13 +270,19 @@
     });
     return Object.values(map).sort(batchCmp);
   }
+  // chutneys / pachadis are side items: counted separately, not as plates
+  const SIDE_RE = /chutney|pachadi/i;
+  function isSideDish(d) { return !!d && SIDE_RE.test(d.category || ''); }
+  function isSideLine(l) { if (l && l.side != null) return !!l.side; return isSideDish(l && Store.data.dishes[l.dishId]); }
+  function platesOf(items) { return (items || []).reduce((x, l) => x + (isSideLine(l) ? 0 : num(l.qty)), 0); }
+
   function prepList(date, slot) {
     const orders = batchOrders(date, slot);
     const dishes = {}; const need = {};
     orders.forEach((o) => {
       (o.items || []).forEach((l) => {
         const k = l.dishId || l.name;
-        const d = dishes[k] || (dishes[k] = { dishId: l.dishId, name: l.name, qty: 0, toStart: 0 });
+        const d = dishes[k] || (dishes[k] = { dishId: l.dishId, name: l.name, qty: 0, toStart: 0, side: isSideLine(l) });
         d.qty += num(l.qty); if (o.status === 'New') d.toStart += num(l.qty);
       });
       if (o.status === 'New') (o.consumption || []).forEach((c) => { need[c.itemId] = (need[c.itemId] || 0) + num(c.qty); });
@@ -294,11 +300,12 @@
       const n = Math.round(need[itemId] * 1000) / 1000;
       return { itemId, name: it.name || 'Removed item', unit: it.unit || '', need: n, stock, short: Math.max(0, Math.round((n - stock) * 1000) / 1000) };
     }).sort((a, b) => (b.short > 0) - (a.short > 0) || a.name.localeCompare(b.name));
-    const plates = orders.reduce((s, o) => s + (o.items || []).reduce((x, l) => x + num(l.qty), 0), 0);
+    const plates = orders.reduce((s, o) => s + platesOf(o.items), 0);
+    const all = Object.values(dishes).sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name));
     return {
       date, slot, orders, plates,
       toStart: orders.filter((o) => o.status === 'New').length,
-      dishes: Object.values(dishes).sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name)),
+      dishes: all.filter((d) => !d.side), sides: all.filter((d) => d.side),
       ingredients, shortages: ingredients.filter((i) => i.short > 0),
       notes: orders.filter((o) => (o.notes || '').trim()).map((o) => ({ id: o.id, customer: o.customer || 'Walk-in', notes: o.notes.trim() })),
       cutoff: cutoffAt(date, slot), deliver: deliverAt(date, slot)
@@ -365,16 +372,26 @@
     };
   }
 
+  function phoneKey(p) { return String(p || '').replace(/\D/g, '').slice(-10); }
+  function contacts() { return Store.list('config').filter((r) => r.kind === 'contact'); }
+  // everyone from orders, plus people saved in the phone book (saved details win)
   function customers() {
     const map = {};
+    const blank = () => ({ name: '', phone: '', address: '', notes: '', contactId: '', orders: 0, spent: 0, last: '', key: '' });
     Store.list('orders').forEach((o) => {
-      const k = (o.phone || '').replace(/\D/g, '').slice(-10) || (o.customer || '').trim().toLowerCase();
+      if (o.status === 'Cancelled') return;
+      const k = phoneKey(o.phone) || (o.customer || '').trim().toLowerCase();
       if (!k) return;
-      const c = map[k] || (map[k] = { name: '', phone: '', address: '', orders: 0, spent: 0, last: '' });
-      c.orders++; c.spent += num(o.total);
+      const c = map[k] || (map[k] = blank());
+      c.key = k; c.orders++; c.spent += num(o.total);
       if (!c.last || o.date > c.last) { c.last = o.date; c.name = o.customer || c.name; c.phone = o.phone || c.phone; c.address = o.address || c.address; }
     });
-    return Object.values(map).sort((a, b) => (a.last < b.last ? 1 : -1));
+    contacts().forEach((r) => {
+      const k = phoneKey(r.phone) || (r.name || '').trim().toLowerCase(); if (!k) return;
+      const c = map[k] || (map[k] = blank());
+      c.key = k; c.contactId = r.id; c.name = r.name || c.name; c.phone = r.phone || c.phone; c.address = r.address || c.address; c.notes = r.notes || '';
+    });
+    return Object.values(map).sort((a, b) => (b.last || '').localeCompare(a.last || '') || (a.name || '').localeCompare(b.name || ''));
   }
 
   // ---------- readable columns for Google Sheets ----------
@@ -395,6 +412,9 @@
       Recipe: (r.recipe || []).map((l) => num(l.qty) + ' ' + ((Store.data.items[l.itemId] || {}).unit || '') + ' ' + itemName(l.itemId)).join(', '),
       Active: r.active === false ? 'No' : 'Yes'
     };
+    if (t === 'config' && r.kind === 'contact') return { Setting: 'Customer', Value: [r.name, r.phone, r.address, r.notes].filter(Boolean).join(' · ') };
+    if (t === 'config' && r.kind === 'poster') return { Setting: 'Poster', Value: (r.name || '') + ': ' + (r.ids || []).length + ' dishes' };
+    if (t === 'config' && r.id === 'kitchen') return { Setting: 'Kitchen', Value: [r.name, r.phone].filter(Boolean).join(' · ') };
     if (t === 'config') return { Setting: r.id, Value: (r.slots || []).map((x) => x.name + ': order by ' + (x.dayBefore ? 'day before ' : '') + x.cutoff + ', deliver ' + x.deliver).join(' | ') };
     return {};
   }
@@ -404,7 +424,7 @@
     dayKey, nowLocal, addDays, monthStart, monthEnd,
     memoryAdapter, idbAdapter,
     unitCost, stockOf, lowStock, dishCost, orderSnapshot, orderTotals, stats, customers, viewOf,
-    DEFAULT_SLOTS, isCooked, slots, serveDate, slotOf, slotIndex, slotDef, cutoffAt, deliverAt, batchKey, parseBatch, batchCmp, nextOpenBatch, batchOrders, batchesWithOrders, prepList
+    DEFAULT_SLOTS, isCooked, slots, serveDate, slotOf, slotIndex, slotDef, cutoffAt, deliverAt, batchKey, parseBatch, batchCmp, nextOpenBatch, batchOrders, batchesWithOrders, prepList, isSideDish, isSideLine, platesOf, phoneKey, contacts
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Core; else G.Core = Core;
 })(typeof window !== 'undefined' ? window : globalThis);

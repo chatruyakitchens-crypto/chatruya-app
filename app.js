@@ -29,7 +29,7 @@
   const PAYMODES = ['Cash', 'UPI', 'Card', 'Pay later'];
   const NEXT = { New: 'Preparing', Preparing: 'Ready', Ready: 'Delivered' };
   const NEXT_LABEL = { New: 'Start cooking', Preparing: 'Mark ready', Ready: 'Mark delivered' };
-  const DISH_CATS = ['Biryani', 'Curries', 'Rice', 'Breads', 'Meals', 'Snacks', 'Sweets', 'Beverages'];
+  const DISH_CATS = ['Breakfast', 'Biryani', 'Curries', 'Rice', 'Breads', 'Meals', 'Chutney', 'Snacks', 'Sweets', 'Beverages'];
 
   const ui = { ordersTab: 'active', ordersQ: '', stockQ: '', spendMonth: today().slice(0, 7), period: 'month', from: today(), to: today() };
 
@@ -310,45 +310,56 @@
   };
   acts.otab = (k) => { ui.ordersTab = k; render(); };
 
-  function orderForm(id) {
+  function orderForm(id, pre) {
+    pre = pre || {};
     const o = id ? S.get('orders', id) : null;
     const dishes = S.list('dishes').filter((d) => d.active !== false || (o && (o.items || []).some((l) => l.dishId === d.id)));
-    if (!dishes.length) {
+    const mains = dishes.filter((d) => !C.isSideDish(d)), sides = dishes.filter((d) => C.isSideDish(d));
+    if (!mains.length) {
       openSheet('New order', '<div class="empty"><p>Add the dishes you sell first. Each dish has a price and a recipe, so every order knows its cost.</p><button class="btn small" data-act="go:menu">Go to menu</button></div>', []);
       bind($('#sheetBody')); return;
     }
-    const lines = {}; // dishId -> {qty, price, name}
-    (o ? o.items : []).forEach((l) => { lines[l.dishId] = { qty: num(l.qty), price: num(l.price), name: l.name }; });
-    const cats = {}; dishes.sort((a, b) => a.name.localeCompare(b.name)).forEach((d) => { const c = d.category || 'Dishes'; (cats[c] = cats[c] || []).push(d); });
+    const lines = {}; // dishId -> {qty, price, name, side}
+    (o ? o.items : []).forEach((l) => { lines[l.dishId] = { qty: num(l.qty), price: num(l.price), name: l.name, side: C.isSideLine(l) }; });
+    const lineOf = (d) => lines[d.id] || (lines[d.id] = { qty: 0, price: num(d.price), name: d.name, side: C.isSideDish(d) });
+    const cats = {}; mains.sort((a, b) => a.name.localeCompare(b.name)).forEach((d) => { const c = d.category || 'Dishes'; (cats[c] = cats[c] || []).push(d); });
     const cust = C.customers();
     const nb = C.nextOpenBatch();
     const dDate = o ? C.serveDate(o) : nb.date, dSlot = o ? C.slotOf(o) : nb.slot;
     const slotNames = C.slots().map((x) => x.name); if (!slotNames.includes(dSlot)) slotNames.push(dSlot);
+    function lineHtml(d) {
+      const l = lines[d.id]; const q = l ? l.qty : 0; const price = l ? l.price : num(d.price); const side = C.isSideDish(d);
+      return '<div class="line' + (q ? ' picked' : '') + '" data-dish="' + d.id + '" data-name="' + esc(d.name.toLowerCase()) + '"><div class="grow"><div class="t" data-add="' + d.id + '">' + esc(d.name) + '</div>' +
+        '<div class="m">₹<input class="pin" data-price="' + d.id + '" inputmode="decimal" value="' + esc(price) + '" aria-label="Price for ' + esc(d.name) + '"> ' + (side ? (price ? 'each' : '(free)') : 'per plate') + '</div></div>' +
+        '<div class="stepper"><button type="button" data-minus="' + d.id + '" aria-label="One less ' + esc(d.name) + '">−</button>' +
+        '<input class="qty" data-qty="' + d.id + '" type="number" inputmode="numeric" min="0" value="' + q + '" aria-label="How many ' + esc(d.name) + '">' +
+        '<button type="button" class="plus" data-add="' + d.id + '" aria-label="One more ' + esc(d.name) + '">+</button></div></div>';
+    }
     let body = '<form id="of" autocomplete="off">';
     body += '<div class="f"><span>Deliver on</span><div class="row2" style="grid-template-columns:1fr auto auto;align-items:center"><input class="in" type="date" name="deliveryDate" value="' + esc(dDate) + '">' +
       '<button type="button" class="btn small alt" data-day="0">Today</button><button type="button" class="btn small alt" data-day="1">Tomorrow</button></div></div>';
     body += group('Slot', chips('slot', slotNames, dSlot), '<span id="cutHint"></span>');
-    body += (dishes.length > 10 ? '<input class="search" type="search" id="dishQ" placeholder="Find a dish">' : '');
-    body += '<div class="box" id="dishBox">' + Object.keys(cats).sort().map((c) => '<div class="cat-h">' + esc(c) + '</div>' + cats[c].map((d) => {
-      const q = lines[d.id] ? lines[d.id].qty : 0;
-      return '<div class="line' + (q ? ' picked' : '') + '" data-dish="' + d.id + '" data-name="' + esc(d.name.toLowerCase()) + '"><div class="grow" data-add="' + d.id + '"><div class="t">' + esc(d.name) + '</div><div class="m">' + inr(lines[d.id] ? lines[d.id].price : d.price) + '</div></div>' +
-        '<div class="stepper"><button type="button" data-minus="' + d.id + '" aria-label="One less ' + esc(d.name) + '">−</button><output>' + q + '</output><button type="button" class="plus" data-add="' + d.id + '" aria-label="One more ' + esc(d.name) + '">+</button></div></div>';
-    }).join('')).join('') + '</div>';
+    body += (mains.length > 10 ? '<input class="search" type="search" id="dishQ" placeholder="Find a dish">' : '');
+    body += '<p class="sub" style="margin:0 0 6px">Tap + or type the number of plates. Tap a price to change it for this order, for example a bulk rate.</p>';
+    body += '<div class="box" id="dishBox">' + Object.keys(cats).sort().map((c) => '<div class="cat-h">' + esc(c) + '</div>' + cats[c].map(lineHtml).join('')).join('') + '</div>';
+    body += '<div class="cat-h" style="margin:0 2px 6px">Chutney</div><div class="box" id="sideBox">' + sides.sort((a, b) => a.name.localeCompare(b.name)).map(lineHtml).join('') +
+      '<div class="line newside"><input class="in" id="newSide" placeholder="' + (sides.length ? 'Another chutney…' : 'e.g. Tomato roti pachadi') + '" aria-label="New chutney name"><button type="button" class="btn small alt" id="addSide">Add</button></div></div>';
     body += '<div class="box" id="sums"></div>';
+    body += field('Customer name', '<input class="in" name="customer" list="custNames" value="' + esc(o ? o.customer : pre.customer || '') + '">') +
+      '<datalist id="custNames">' + cust.filter((c) => c.name).map((c) => '<option value="' + esc(c.name) + '"></option>').join('') + '</datalist>';
+    body += field('Phone', '<input class="in" name="phone" type="tel" list="custPhones" value="' + esc(o ? o.phone : pre.phone || '') + '" placeholder="98765 43210">', 'Optional. A past customer’s number fills in their name and address.') +
+      '<datalist id="custPhones">' + cust.filter((c) => c.phone).map((c) => '<option value="' + esc(c.phone) + '">' + esc(c.name) + '</option>').join('') + '</datalist>';
+    body += '<details class="more"' + (o ? ' open' : '') + '><summary><span>More details</span><span class="sub" id="moreSum"></span></summary><div class="inner">';
+    body += field('Address or pickup note', '<textarea class="in" name="address" rows="2">' + esc(o ? o.address : pre.address || '') + '</textarea>');
     body += '<div class="row2">' + field('Delivery charge', '<input class="in" name="delivery" inputmode="decimal" value="' + esc(o ? o.delivery || '' : '') + '" placeholder="0">') +
       field('Discount', '<input class="in" name="discount" inputmode="decimal" value="' + esc(o ? o.discount || '' : '') + '" placeholder="0">') + '</div>';
-    body += field('Customer phone', '<input class="in" name="phone" type="tel" list="custPhones" value="' + esc(o ? o.phone : '') + '" placeholder="98765 43210">', 'Pick a past customer to fill in their name and address.') +
-      '<datalist id="custPhones">' + cust.filter((c) => c.phone).map((c) => '<option value="' + esc(c.phone) + '">' + esc(c.name) + '</option>').join('') + '</datalist>';
-    body += field('Customer name', '<input class="in" name="customer" list="custNames" value="' + esc(o ? o.customer : '') + '">') +
-      '<datalist id="custNames">' + cust.filter((c) => c.name).map((c) => '<option value="' + esc(c.name) + '"></option>').join('') + '</datalist>';
-    body += field('Address or pickup note', '<textarea class="in" name="address" rows="2">' + esc(o ? o.address : '') + '</textarea>');
     body += group('Order came by', chips('channel', CHANNELS, o ? o.channel : 'WhatsApp'));
     body += group('Payment', chips('payMode', PAYMODES, o ? o.payMode : 'UPI'));
     body += '<label class="check"><input type="checkbox" name="paid"' + (o && o.paid ? ' checked' : '') + '> Payment received</label>';
     if (o) body += group('Status', chips('status', C.ORDER_STATUSES.concat(['Cancelled']), o.status));
     body += field('Order taken at', '<input class="in" type="datetime-local" name="date" value="' + esc(o ? o.date : C.nowLocal()) + '">');
     body += field('Notes', '<textarea class="in" name="notes" rows="2" placeholder="Less spicy, extra raita…">' + esc(o ? o.notes : '') + '</textarea>');
-    body += '</form>';
+    body += '</div></details></form>';
 
     const form = () => $('#of');
     function drawCut() {
@@ -359,25 +370,30 @@
       el.innerHTML = cut > now ? 'Orders for ' + esc(sl) + ' ' + esc(niceDay(d).toLowerCase() === 'today' ? 'today' : 'on ' + niceDay(d)) + ' close ' + fmtWhen(cut) + ' (in ' + untilText(cut - now) + '). Deliver by ' + fmtClock(del) + '.'
         : '<b class="neg">Cut-off passed at ' + fmtWhen(cut) + '.</b> You can still save it as a late order.';
     }
+    const picked = () => Object.keys(lines).filter((k) => lines[k].qty > 0).map((k) => ({ dishId: k, ...lines[k] }));
     function draw() {
       drawCut();
-      const ls = Object.keys(lines).filter((k) => lines[k].qty > 0).map((k) => ({ dishId: k, ...lines[k] }));
-      const t = C.orderTotals(ls, val(form(), 'discount'), val(form(), 'delivery'));
-      const snap = C.orderSnapshot(ls);
+      const f = form(); const ls = picked();
+      const t = C.orderTotals(ls, val(f, 'discount'), val(f, 'delivery'));
+      const snap = C.orderSnapshot(ls); const plates = C.platesOf(ls);
       $('#sums').innerHTML = ls.length
-        ? ls.map((l) => '<div class="sum"><span>' + l.qty + ' × ' + esc(l.name) + '</span><span>' + inr(l.qty * l.price) + '</span></div>').join('') +
-          '<div class="sum total"><span>Total</span><span>' + inr(t.total) + '</span></div>' +
+        ? ls.map((l) => '<div class="sum"><span>' + l.qty + ' × ' + esc(l.name) + (num(l.price) ? ' @ ' + inr(l.price) : '') + '</span><span>' + (num(l.price) ? inr(l.qty * l.price) : 'free') + '</span></div>').join('') +
+          (num(val(f, 'delivery')) ? '<div class="sum"><span>Delivery</span><span>' + inr(val(f, 'delivery')) + '</span></div>' : '') +
+          (num(val(f, 'discount')) ? '<div class="sum"><span>Discount</span><span>− ' + inr(val(f, 'discount')) + '</span></div>' : '') +
+          '<div class="sum total"><span>Total · ' + plates + ' plate' + (plates === 1 ? '' : 's') + '</span><span>' + inr(t.total) + '</span></div>' +
           '<div class="sum sub"><span>Food cost ' + inr(snap.cost) + '</span><span>Profit ' + inr(t.total - snap.cost) + '</span></div>'
-        : '<p class="sub" style="margin:10px 0">Tap + next to a dish to add it.</p>';
-      $$('#dishBox .line').forEach((row) => {
-        const q = lines[row.dataset.dish] ? lines[row.dataset.dish].qty : 0;
-        row.querySelector('output').textContent = q; row.classList.toggle('picked', q > 0);
+        : '<p class="sub" style="margin:10px 0">Tap + next to a dish, or type how many plates.</p>';
+      $$('#sheetBody .line[data-dish]').forEach((row) => {
+        const l = lines[row.dataset.dish]; const q = l ? l.qty : 0;
+        const qi = row.querySelector('.qty'); if (qi && qi !== document.activeElement && Number(qi.value) !== q) qi.value = q;
+        row.classList.toggle('picked', q > 0);
       });
+      const ms = $('#moreSum'); if (ms) ms.textContent = [val(f, 'channel'), val(f, 'payMode'), val(f, 'paid') ? 'paid' : 'not paid'].filter(Boolean).join(' · ');
     }
     async function save() {
       const f = form();
-      const items = Object.keys(lines).filter((k) => lines[k].qty > 0).map((k) => ({ dishId: k, name: lines[k].name, qty: lines[k].qty, price: lines[k].price }));
-      if (!items.length) { toast('Add at least one dish'); return; }
+      const items = picked().map((l) => ({ dishId: l.dishId, name: l.name, qty: l.qty, price: num(l.price), side: !!l.side }));
+      if (!items.some((l) => !l.side)) { toast('Add at least one dish'); return; }
       const discount = num(val(f, 'discount')), delivery = num(val(f, 'delivery'));
       const t = C.orderTotals(items, discount, delivery);
       const same = o && JSON.stringify((o.items || []).map((l) => [l.dishId, num(l.qty)])) === JSON.stringify(items.map((l) => [l.dishId, l.qty]));
@@ -391,32 +407,48 @@
       };
       if (!o && C.cutoffAt(rec.deliveryDate, rec.slot) < new Date()) rec.late = true;
       const saved = await S.put('orders', rec);
-      toast(o ? 'Order updated' : 'Order saved');
+      toast((o ? 'Order updated' : 'Order saved') + ' · ' + C.platesOf(items) + ' plates');
       orderDetail(saved.id);
+    }
+    async function addSide() {
+      const inp = $('#newSide'); const name = inp.value.trim(); if (!name) { inp.focus(); return; }
+      let d = S.list('dishes').find((x) => x.name.toLowerCase() === name.toLowerCase());
+      if (!d) d = await S.put('dishes', { name, category: 'Chutney', price: 0, extraCost: 0, recipe: [], active: true });
+      const l = lineOf(d); l.side = true; if (!l.qty) l.qty = Math.max(1, C.platesOf(picked()));
+      if (!$('#sheetBody .line[data-dish="' + d.id + '"]')) $('#sheetBody .newside').insertAdjacentHTML('beforebegin', lineHtml(d));
+      inp.value = ''; draw(); toast(name + ' added');
     }
     openSheet(o ? 'Edit order #' + dayNo(o) : 'New order', body, [{ label: o ? 'Save changes' : 'Save order', cls: 'warm', run: save }], (root) => {
       root.addEventListener('click', (e) => {
+        if (e.target.closest('#addSide')) { addSide(); return; }
         const add = e.target.closest('[data-add]'), minus = e.target.closest('[data-minus]');
-        if (add) { const d = S.get('dishes', add.dataset.add); const l = lines[d.id] || (lines[d.id] = { qty: 0, price: num(d.price), name: d.name }); l.qty++; draw(); }
+        if (add) { const d = S.data.dishes[add.dataset.add]; if (d) { lineOf(d).qty++; draw(); } }
         if (minus) { const l = lines[minus.dataset.minus]; if (l && l.qty > 0) l.qty--; draw(); }
         const day = e.target.closest('[data-day]'); if (day) { form().elements.deliveryDate.value = C.addDays(today(), Number(day.dataset.day)); drawCut(); }
       });
+      root.addEventListener('keydown', (e) => { if (e.target.id === 'newSide' && e.key === 'Enter') { e.preventDefault(); addSide(); } });
+      root.addEventListener('focusin', (e) => { const c = e.target.classList; if (c && (c.contains('qty') || c.contains('pin'))) setTimeout(() => { try { e.target.select(); } catch (x) { /* ignore */ } }, 0); });
       root.addEventListener('input', (e) => {
         if (e.target.id === 'dishQ') { const q = e.target.value.toLowerCase(); $$('#dishBox .line').forEach((r) => { r.style.display = r.dataset.name.includes(q) ? '' : 'none'; }); return; }
+        if (e.target.id === 'newSide') return;
+        const ds = e.target.dataset || {};
+        if (ds.qty) { const d = S.data.dishes[ds.qty]; if (d) lineOf(d).qty = Math.max(0, Math.floor(num(e.target.value))); }
+        if (ds.price) { const d = S.data.dishes[ds.price]; if (d) lineOf(d).price = Math.max(0, num(e.target.value)); }
         if (e.target.name === 'phone') {
-          const d = e.target.value.replace(/\D/g, '').slice(-10); const c = d.length === 10 && cust.find((x) => x.phone.replace(/\D/g, '').slice(-10) === d);
+          const dg = e.target.value.replace(/\D/g, '').slice(-10); const c = dg.length === 10 && cust.find((x) => x.phone.replace(/\D/g, '').slice(-10) === dg);
           const f = form(); if (c) { if (!f.elements.customer.value) f.elements.customer.value = c.name; if (!f.elements.address.value) f.elements.address.value = c.address; }
         }
         draw();
       });
-      root.addEventListener('change', (e) => { drawCut(); if (e.target.name === 'payMode' && e.target.value === 'Pay later') form().elements.paid.checked = false; });
+      root.addEventListener('change', (e) => { drawCut(); if (e.target.name === 'payMode' && e.target.value === 'Pay later') form().elements.paid.checked = false; draw(); });
       draw();
     });
   }
 
   function billText(o) {
     const L = ['*' + (S.meta.kitchenName || 'Chatruya Kitchens') + '*', 'Order #' + dayNo(o) + ' · ' + C.slotOf(o) + ', ' + niceDay(C.serveDate(o)) + ' (by ' + fmtClock(C.deliverAt(C.serveDate(o), C.slotOf(o))) + ')', ''];
-    (o.items || []).forEach((l) => L.push(l.qty + ' x ' + l.name + ' — ' + inr(l.qty * l.price)));
+    (o.items || []).forEach((l) => L.push(l.qty + ' x ' + l.name + ' — ' + (num(l.price) ? inr(l.qty * l.price) : 'free')));
+    if (C.platesOf(o.items) >= 2) L.push('(' + C.platesOf(o.items) + ' plates)');
     if (num(o.delivery)) L.push('Delivery — ' + inr(o.delivery));
     if (num(o.discount)) L.push('Discount — −' + inr(o.discount));
     L.push('', '*Total: ' + inr(o.total) + '*', 'Payment: ' + (o.payMode || '') + (o.paid ? ' (paid, thank you)' : ' (due)'), '', 'Thank you for ordering with us!');
@@ -432,14 +464,15 @@
       (o.phone ? '<div style="margin-top:8px"><a href="tel:' + esc(o.phone.replace(/\s/g, '')) + '" style="color:var(--leaf-2);font-weight:700">Call ' + esc(o.phone) + '</a></div>' : '') +
       (o.address ? '<div class="sub" style="margin-top:4px">' + esc(o.address) + '</div>' : '') +
       (o.notes ? '<div class="note" style="margin:10px 0 0">' + esc(o.notes) + '</div>' : '') + '</div>';
-    b += '<div class="box">' + (o.items || []).map((l) => '<div class="sum"><span>' + l.qty + ' × ' + esc(l.name) + '</span><span>' + inr(l.qty * l.price) + '</span></div>').join('') +
+    b += '<div class="box">' + (o.items || []).map((l) => '<div class="sum"><span>' + l.qty + ' × ' + esc(l.name) + '</span><span>' + (num(l.price) ? inr(l.qty * l.price) : 'free') + '</span></div>').join('') +
       (num(o.delivery) ? '<div class="sum"><span>Delivery</span><span>' + inr(o.delivery) + '</span></div>' : '') +
       (num(o.discount) ? '<div class="sum"><span>Discount</span><span>− ' + inr(o.discount) + '</span></div>' : '') +
-      '<div class="sum total"><span>Total</span><span>' + inr(o.total) + '</span></div>' +
+      '<div class="sum total"><span>Total · ' + C.platesOf(o.items) + ' plates</span><span>' + inr(o.total) + '</span></div>' +
       '<div class="sum sub"><span>Food cost ' + inr(o.cost) + '</span><span>Profit ' + inr(num(o.total) - num(o.cost)) + '</span></div></div>';
     b += '<div class="check" style="justify-content:space-between"><span>' + esc(o.payMode || '') + ' · ' + (o.paid ? '<b class="pos">Paid</b>' : '<b class="neg">Not paid yet</b>') + '</span>' +
       '<button class="btn small ' + (o.paid ? 'alt' : '') + '" data-act="togglePaid:' + o.id + '">' + (o.paid ? 'Mark unpaid' : 'Mark paid') + '</button></div>';
-    b += '<div class="btns" style="margin-bottom:10px">' + (o.phone ? '<a class="btn alt" target="_blank" rel="noopener" href="https://wa.me/' + phoneDigits(o.phone) + '?text=' + encodeURIComponent(billText(o)) + '">Send bill on WhatsApp</a>' : '<button class="btn alt" data-act="shareBill:' + o.id + '">Share bill</button>') + '</div>';
+    b += '<div class="btns" style="margin-bottom:8px"><button class="btn warm" data-act="billPdf:' + o.id + '">Share bill as PDF</button></div>';
+    b += '<div class="btns" style="margin-bottom:10px">' + (o.phone ? '<a class="btn alt" target="_blank" rel="noopener" href="https://wa.me/' + phoneDigits(o.phone) + '?text=' + encodeURIComponent(billText(o)) + '">Send bill as text on WhatsApp</a>' : '<button class="btn alt" data-act="shareBill:' + o.id + '">Share bill</button>') + '</div>';
     b += '<div class="btns"><button class="btn small alt" data-act="editOrder:' + o.id + '">Edit</button>' +
       (o.status !== 'Cancelled' && o.status !== 'Delivered' ? '<button class="btn small danger" data-act="cancelOrder:' + o.id + '">Cancel order</button>' : '') +
       '<button class="btn small danger" data-act="deleteOrder:' + o.id + '">Delete</button></div>';
@@ -459,5 +492,5 @@
   };
 
   // expose for part 2
-  window.App = { C, S, num, r2, $, $$, esc, inr, qty, today, niceDay, niceTime, MONTHS, DAYS, UNITS, PAYMODES, DISH_CATS, ui, toast, chips, field, group, val, confirmAsk, phoneDigits, itemName, itemUnit, openSheet, closeSheet, sheetOpen, views, acts, bind, render, fab, runSync, scheduleSync, badge, syncConfigured, orderDetail, ticket, dayNo, NEXT, NEXT_LABEL, fmtClock, fmtWhen, untilText, batchLabel, batchHash, currentAlerts, kitchenQueue };
+  window.App = { C, S, num, r2, $, $$, esc, inr, qty, today, niceDay, niceTime, MONTHS, DAYS, UNITS, PAYMODES, DISH_CATS, ui, toast, chips, field, group, val, confirmAsk, phoneDigits, itemName, itemUnit, openSheet, closeSheet, sheetOpen, views, acts, bind, render, fab, runSync, scheduleSync, badge, syncConfigured, orderDetail, ticket, dayNo, NEXT, NEXT_LABEL, fmtClock, fmtWhen, untilText, batchLabel, batchHash, currentAlerts, kitchenQueue, orderForm, billText };
 })();
